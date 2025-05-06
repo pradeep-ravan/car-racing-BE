@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Car Racing Game Dashboard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css">
+  <style>
+    body {
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .chart-container {
+      background-color: white;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1, h2 {
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="my-4 text-center">Car Racing Game Analytics Dashboard</h1>
+    
+    <div class="row">
+      <div class="col-md-4">
+        <div class="card mb-4">
+          <div class="card-body text-center">
+            <h5 class="card-title">Total Games</h5>
+            <h2 id="totalGames">0</h2>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card mb-4">
+          <div class="card-body text-center">
+            <h5 class="card-title">Average Score</h5>
+            <h2 id="avgScore">0</h2>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card mb-4">
+          <div class="card-body text-center">
+            <h5 class="card-title">Average Time Played</h5>
+            <h2 id="avgTime">0s</h2>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="row">
+      <div class="col-md-6">
+        <div class="chart-container">
+          <h2>Score Distribution</h2>
+          <canvas id="scoreChart"></canvas>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="chart-container">
+          <h2>Game Sessions Over Time</h2>
+          <canvas id="sessionsChart"></canvas>
+        </div>
+      </div>
+    </div>
+    
+    <div class="row">
+      <div class="col-12">
+        <div class="chart-container">
+          <h2>Top Players</h2>
+          <table class="table table-striped">
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>Score</th>
+                <th>Time Played</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="topPlayers">
+              <!-- Top players will be loaded here -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    // Fetch game statistics
+    async function fetchStats() {
+      try {
+        const response = await fetch('/api/game/stats');
+        const stats = await response.json();
+        
+        // Update dashboard metrics
+        document.getElementById('totalGames').textContent = stats.totalGames;
+        document.getElementById('avgScore').textContent = Math.round(stats.averageScore || 0);
+        
+        // Load top players table
+        const topPlayersTable = document.getElementById('topPlayers');
+        topPlayersTable.innerHTML = '';
+        
+        stats.topScores.forEach(game => {
+          const row = document.createElement('tr');
+          const date = new Date(game.date_played).toLocaleDateString();
+          
+          row.innerHTML = `
+            <td>${game.player_name}</td>
+            <td>${game.score}</td>
+            <td>${game.time_played}s</td>
+            <td>${date}</td>
+          `;
+          
+          topPlayersTable.appendChild(row);
+        });
+        
+        // Fetch all sessions for charts
+        const sessionsResponse = await fetch('/api/game/sessions');
+        const sessions = await sessionsResponse.json();
+        
+        // Calculate average time
+        const totalTime = sessions.reduce((sum, session) => sum + session.time_played, 0);
+        const avgTime = sessions.length > 0 ? Math.round(totalTime / sessions.length) : 0;
+        document.getElementById('avgTime').textContent = `${avgTime}s`;
+        
+        // Create charts
+        createScoreChart(sessions);
+        createSessionsChart(sessions);
+        
+      } catch (error) {
+        console.error('Error fetching game stats:', error);
+      }
+    }
+    
+    // Create score distribution chart
+    function createScoreChart(sessions) {
+      const scores = sessions.map(session => session.score);
+      const scoreRanges = ['0-100', '101-200', '201-300', '301-400', '401+'];
+      const scoreCounts = [0, 0, 0, 0, 0];
+      
+      scores.forEach(score => {
+        if (score <= 100) scoreCounts[0]++;
+        else if (score <= 200) scoreCounts[1]++;
+        else if (score <= 300) scoreCounts[2]++;
+        else if (score <= 400) scoreCounts[3]++;
+        else scoreCounts[4]++;
+      });
+      
+      const ctx = document.getElementById('scoreChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: scoreRanges,
+          datasets: [{
+            label: 'Number of Games',
+            data: scoreCounts,
+            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                stepSize: 1
+              }
+            }
+          }
+        }
+      });
+    }
+    
+    // Create sessions over time chart
+    function createSessionsChart(sessions) {
+      // Group sessions by date
+      const dateMap = {};
+      sessions.forEach(session => {
+        const date = new Date(session.date_played).toLocaleDateString();
+        dateMap[date] = (dateMap[date] || 0) + 1;
+      });
+      
+      const dates = Object.keys(dateMap).sort((a, b) => new Date(a) - new Date(b));
+      const counts = dates.map(date => dateMap[date]);
+      
+      const ctx = document.getElementById('sessionsChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: dates,
+          datasets: [{
+            label: 'Number of Games',
+            data: counts,
+            fill: false,
+            borderColor: 'rgba(75, 192, 192, 1)',
+            tension: 0.1
+          }]
+        }
+      });
+    }
+    
+    // Load dashboard data when page loads
+    window.addEventListener('DOMContentLoaded', fetchStats);
+  </script>
+</body>
+</html>
